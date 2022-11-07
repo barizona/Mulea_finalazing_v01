@@ -1,61 +1,59 @@
-# library(devtools)
-# install_github("https://github.com/koralgooll/MulEA.git")
-library(MulEA) # TODO: rename MulEA -> mulea
+library(MulEA)
 library(tidyverse)
 
 #xxxxxxxxxxxxxxxxxxxxxx
 # Data --------------------------------------------------------------------
 #xxxxxxxxxxxxxxxxxxxxxx
 
-# import example ontology
-# import other ontology from a GMT file using read_gmt()
-data(geneSet)
-# TODO: rename geneSet -> example_ontology
-# TODO: colnames in example_ontology should be changed:
-# ontologyId -> ontology_id
-# ontologyName -> ontology_name
-# listOfValues -> list_of_elements
+# E.col treated with Ciprofloxacin
+Geo2R_reult_tab <- read_tsv("input/GSE68106.top.table.tsv")
+# positive logFC means overexpression when sample was treated with Ciprofloxacin
 
-# TODO: import test set: df containing all genes in the expariment ordered by FC and BH corrected p-val -> can be applied for ORA and GSEA as well
-
-# import selected genes for ORA
-data(selectDf)
-
-# import background gene set for ORA
-data(poolDf)
+# Reformatting the Geo2R result table
+Geo2R_reult_tab <- Geo2R_reult_tab %>% 
+  # renaming Gene.symbol to Gene.symbol.multiple
+  rename(Gene.symbol.multiple = Gene.symbol) %>% 
+  # extracting the first gene from the Gene.symbol coumn
+  mutate(Gene.symbol = str_remove(string = Gene.symbol.multiple,
+                                  pattern = "\\/.*")) %>% 
+  # removing rows where Gene.symbol is NA
+  filter(!is.na(Gene.symbol)) %>% 
+  # ordering by logFC
+  arrange(desc(logFC))
+  
+# available GMTs
+GO_GMT <- read_gmt("/home/barizona/Dropbox/MulEA/Databases/GO/update/GO_Escherichia_coli_Marton.gmt")
+KEGG_GMT <- read_gmt("/home/barizona/Dropbox/MulEA/Databases/KEGG Pathways/08_2020/KEGG_Escherichia_coli_gene_symbol_Leila.gmt")
+# Operon_GMT <- read_gmt("/home/barizona/Dropbox/MulEA/Databases/Operon/Operon_Marton_Escherichia_coli_kegg.gmt")
+# not gene symbol
 
 #xxxxxxxxxxxxxxxxxxxxx
-# ORA ---------------------------------------------------------------------
+# ORA GO ---------------------------------------------------------------------
 #xxxxxxxxxxxxxxxxxxxxx
+
+# Sign. overexpressed genes
+E.coli_test_element_names <- Geo2R_reult_tab %>% 
+  filter(adj.P.Val < 0.05
+         & logFC > 0) %>% 
+  select(Gene.symbol) %>% 
+  pull() %>% 
+  unique()
+
+# background genes
+E.coli_background_element_names <- Geo2R_reult_tab %>% 
+  select(Gene.symbol) %>% 
+  pull() %>% 
+  unique()
 
 ora_model <- ora(
-  gmt = geneSet,
-  element_names = selectDf$select, 
-  background_element_names = poolDf$background_element_names,
+  gmt = KEGG_GMT,
+  element_names = E.coli_test_element_names, 
+  background_element_names = E.coli_background_element_names,
   p_value_adjustment_method = "PT",
-  number_of_permutations = 1000
+  number_of_permutations = 10000
 )
 
-ora_model
-# TODO: change 
-# Slot "test":
-#   function (setBasemodel) 
-#   {
-#     setBasedTestRes <- NULL 
-# etc
-# to
-# "Over-representation analysis (ORA)"
-
 ora_results <- run_test(ora_model)
-
-# TODO: colnames should be changed:
-# ontologyId -> ontology_id
-# ontologyName -> ontology_name
-# nrCommonGenesOntologySet -> nr_common_with_tested_elements
-# nrCommonGenesOntologyBackground -> nr_common_with_backgound_elements
-# pValue -> p_value
-# adjustedPValue -> adjusted_p_value
-# adjustedPValueEmpirical -> eFDR
 
 #xxxxxxxxxxxxxxxxx
 # * Plotting ----------------------------------------------------------------
@@ -67,6 +65,8 @@ ora_results <- run_test(ora_model)
 ora_reshaped_results <- reshape_results(
   model = ora_model, 
   model_results = ora_results, 
+  # ontology_id_colname = "ontologyName",
+  # ontology_element_colname = "genIdInOntology",
   p_value_type_colname='adjustedPValueEmpirical'
 )
 
@@ -75,17 +75,16 @@ ora_reshaped_results <- reshape_results(
 #xxxxxxxx
 plot_graph(
   reshaped_results = ora_reshaped_results,
-  p_value_max_threshold = 1.00,
+  p_value_max_threshold = 0.5,
   p_value_type_colname = "adjustedPValueEmpirical"
 )
-# TODO: change font in the legend to default
 
 #xxxxxxxx
 # ** Barplot ----
 #xxxxxxxx
 plot_barplot(
   reshaped_results = ora_reshaped_results,
-  p_value_max_threshold = 1.00,
+  p_value_max_threshold = 0.5,
   p_value_type_colname = "adjustedPValueEmpirical"
 )
 
@@ -94,7 +93,7 @@ plot_barplot(
 #xxxxxxxx
 plot_heatmap(
   reshaped_results=ora_reshaped_results,
-  p_value_max_threshold=1.00,
+  p_value_max_threshold = 0.5,
   p_value_type_colname = 'adjustedPValueEmpirical'
 )
 
@@ -107,10 +106,10 @@ plot_heatmap(
 # TODO: rename ranked_model to gsea_model
 
 gsea_model <- gsea(
-    gmt = geneSet,
-    element_names = selectDf$select,
-    element_scores = selectDf$score
-  )
+  gmt = geneSet,
+  element_names = selectDf$select,
+  element_scores = selectDf$score
+)
 
 # TODO: rename ranked_results to gsea_results
 gsea_results <- run_test(gsea_model)
@@ -183,9 +182,9 @@ gsea_reshaped_results_read_in$adjustedPValue %>% class()
 # [1] "numeric"
 
 plot_barplot(
-    reshaped_results = gsea_reshaped_results_read_in,
-    p_value_max_threshold = 1.00
-  )
+  reshaped_results = gsea_reshaped_results_read_in,
+  p_value_max_threshold = 1.00
+)
 # Error in `levels<-`(`*tmp*`, value = as.character(levels)) : 
 # factor level [5] is duplicated
 
